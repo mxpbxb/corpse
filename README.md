@@ -30,3 +30,5 @@ native corpse_native-1.0.2-horizon.1.hnmod` packs it. The unit tests run with `c
 - Inspired by [Corpse](https://github.com/henkelmax/corpse) by Max Henkel. No code or assets of Corpse
   are in this mod: it was written from scratch for Horizon.
 - No Minecraft code or assets are included.
+
+The native channel `corpse_native:waypoints` lets a radar show a player’s unrecovered corpses, even outside render distance. The version-1 payload starts with a version byte and a length-prefixed UTF-8 dimension, followed by up to 64 positions (three big-endian f64s each). An empty position list clears the previous markers. The server shares coordinates only with the corpse’s owner. The mannequin still carries the owner’s profile so hosts with custom character presentation can resolve their skin and body.
