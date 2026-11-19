@@ -28,6 +28,8 @@ const TAG_PREFIX: &str = "corpse_";
 const SHOWN: usize = 45;
 const INFO: usize = 45;
 const TAKE_ALL: usize = 49;
+const RADAR_CHANNEL: &str = "corpse_native:waypoints";
+const RADAR_MAX: usize = 64;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Corpse {
@@ -62,6 +64,7 @@ struct State {
     open: HashMap<u128, (i32, u64)>,
     /// Corpse bodies to take away: (dimension, corpse).
     to_remove: Vec<(String, u64)>,
+    radar_tick: u8,
 }
 
 static STATE: LazyLock<Mutex<State>> = LazyLock::new(Default::default);
@@ -402,6 +405,27 @@ impl Mod {
     }
 }
 
+/// Owner-only snapshots, including an empty snapshot to clear recovered bodies.
+fn radar_snapshot(corpses: &HashMap<u64, Corpse>, owner: u128, dimension: &str) -> Vec<u8> {
+    if dimension.len() > u8::MAX as usize {
+        return Vec::new();
+    }
+    let mut entries: Vec<_> = corpses.values()
+        .filter(|c| c.owner == owner && c.dimension == dimension && !c.items.is_empty())
+        .collect();
+    entries.sort_unstable_by_key(|c| std::cmp::Reverse((c.created, c.id)));
+    let mut bytes = Vec::with_capacity(1 + RADAR_MAX * 24);
+    bytes.push(1);
+    bytes.push(dimension.len() as u8);
+    bytes.extend_from_slice(dimension.as_bytes());
+    for c in entries.into_iter().take(RADAR_MAX) {
+        for coordinate in c.pos {
+            bytes.extend_from_slice(&coordinate.to_be_bytes());
+        }
+    }
+    bytes
+}
+
 fn pretty_dim(d: &str) -> String {
     match d {
         "minecraft:overworld" => "the Overworld".to_owned(),
@@ -510,6 +534,13 @@ impl Hooks for Mod {
         }
         for (dim, id) in std::mem::take(&mut state.to_remove) {
             host.run_command(&format!("execute in {dim} run kill @e[type={KIND},tag={TAG_PREFIX}{id:x}]"));
+        }
+        state.radar_tick = (state.radar_tick + 1) % 20;
+        if state.radar_tick == 0 {
+            for player in host.server_players() {
+                let bytes = radar_snapshot(&state.corpses, player.uuid, &player.dimension);
+                let _ = host.net_send_to_player(player.uuid, RADAR_CHANNEL, &bytes);
+            }
         }
     }
 }
